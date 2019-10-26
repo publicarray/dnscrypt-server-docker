@@ -14,6 +14,28 @@ CONF_DIR="/opt/encrypted-dns/etc"
 CONFIG_FILE="${CONF_DIR}/encrypted-dns.toml"
 CONFIG_FILE_TEMPLATE="${CONF_DIR}/encrypted-dns.toml.in"
 
+getServiceIP() {
+    for arg; do
+        dig "$arg" +short
+    done
+}
+waitOrFail() {
+    maxTries=24
+    i=0
+    while [ $i -lt $maxTries ]; do
+        outStr="$($@)"
+        if [ $? -eq 0 ]; then
+            echo "$outStr"
+            return
+        fi
+        i=$((i + 1))
+        echo "==> waiting for a dependent service $i/$maxTries" >&2
+        sleep 5
+    done
+    echo "Too many failed attempts" >&2
+    exit 1
+}
+
 init() {
     if [ "$(is_initialized)" = yes ]; then
         start
@@ -22,14 +44,15 @@ init() {
 
     anondns_enabled="false"
     anondns_blacklisted_ips=""
-
+    upstream_address="127.0.0.1"
     metrics_address="127.0.0.1:9100"
 
-    while getopts "h?N:E:T:AM:" opt; do
+    while getopts "h?N:E:d:T:AM:" opt; do
         case "$opt" in
         h | \?) usage ;;
         N) provider_name=$(echo "$OPTARG" | sed -e 's/^[ \t]*//' | tr A-Z a-z) ;;
         E) ext_address=$(echo "$OPTARG" | sed -e 's/^[ \t]*//' | tr A-Z a-z) ;;
+        d) upstream_address=$(waitOrFail getServiceIP "$(echo "$OPTARG" | sed -e 's/^[ \t]*//' | tr A-Z a-z)") ;;
         T) tls_proxy_upstream_address=$(echo "$OPTARG" | sed -e 's/^[ \t]*//' | tr A-Z a-z) ;;
         A) anondns_enabled="true" ;;
         M) metrics_address=$(echo "$OPTARG" | sed -e 's/^[ \t]*//' | tr A-Z a-z) ;;
@@ -70,6 +93,7 @@ init() {
     sed \
         -e "s#@PROVIDER_NAME@#${provider_name}#" \
         -e "s#@EXTERNAL_IPV4@#${ext_address}#" \
+        -e "s#@UPSTREAM_IPV4@#${upstream_address}#" \
         -e "s#@TLS_PROXY_CONFIGURATION@#${tls_proxy_configuration}#" \
         -e "s#@DOMAIN_BLACKLIST_CONFIGURATION@#${domain_blacklist_configuration}#" \
         -e "s#@ANONDNS_ENABLED@#${anondns_enabled}#" \
@@ -169,11 +193,24 @@ start() {
     /opt/encrypted-dns/sbin/encrypted-dns \
         --config "$CONFIG_FILE" --dry-run |
         tee "${KEYS_DIR}/provider-info.txt"
-    exec /etc/runit/2 </dev/null >/dev/null 2>/dev/null
+
+    if [ -d /etc/service ]; then
+        exec /etc/runit/2 </dev/null >/dev/null 2>/dev/null
+    else
+        if [ ! -f "${KEYS_DIR}/provider_name" ]; then
+            exit 1
+        fi
+        exec /opt/encrypted-dns/sbin/encrypted-dns --config "$CONFIG_FILE"
+    fi
 }
 
 shell() {
     exec /bin/bash
+}
+
+bin() {
+    shift
+    exec /opt/encrypted-dns/sbin/encrypted-dns "$@"
 }
 
 usage() {
@@ -190,12 +227,16 @@ If TLS connections to the same port have to be redirected to a HTTPS server
 
 To enable Anonymized DNS relaying, add -A.
 
+To use dns service discovery use -d <service name> of a resolver on port 53
+
 * start (default command): start the resolver and the dnscrypt server proxy.
 Ports 443/udp and 443/tcp have to be publicly exposed.
 
 * provider-info: prints the provider name and provider public key.
 
 * shell: run a shell.
+
+* bin: run the binary with custom arguments
 
 This container has a single volume that you might want to securely keep a
 backup of: /opt/encrypted-dns/etc/keys
@@ -211,5 +252,6 @@ init)
     ;;
 provider-info) provider_info ;;
 shell) shell ;;
+bin) bin "$@";;
 *) usage ;;
 esac

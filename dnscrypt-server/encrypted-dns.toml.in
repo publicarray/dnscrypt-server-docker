@@ -22,7 +22,7 @@ listen_addrs = [
 
 ## Upstream DNS server and port
 
-upstream_addr = "127.0.0.1:553"
+upstream_addr = "@UPSTREAM_IPV4@:53"
 
 
 ## File name to save the state to
@@ -146,7 +146,7 @@ key_cache_capacity = 10000
 
 [tls]
 
-## Where to prooxy TLS connections to (e.g. DoH server)
+## Where to proxy TLS connections to (e.g. DoH server)
 
 # upstream_addr = "127.0.0.1:4343"
 
@@ -171,8 +171,9 @@ key_cache_capacity = 10000
 [metrics]
 
 type = "prometheus"
-listen_addr = "@METRICS_ADDRESS@"
+listen_addr = "0.0.0.0:9100"
 path = "/metrics"
+
 
 
 ################################

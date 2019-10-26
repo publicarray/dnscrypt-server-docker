@@ -1,17 +1,16 @@
-FROM ubuntu:19.04
+## Fix Me
+FROM publicarray:dnscrypt-server
 LABEL maintainer="Frank Denis"
 SHELL ["/bin/sh", "-x", "-c"]
 ENV SERIAL 1
 
 ENV CFLAGS=-Ofast
 ENV BUILD_DEPS   curl make build-essential git libevent-dev libexpat1-dev autoconf file libssl-dev byacc
-ENV RUNTIME_DEPS bash util-linux coreutils findutils grep libssl1.1 ldnsutils libevent-2.1 expat ca-certificates runit runit-helper jed
+ENV RUNTIME_DEPS util-linux ldnsutils runit runit-helper jed
 
 RUN apt-get update; apt-get -qy dist-upgrade; apt-get -qy clean && \
     apt-get install -qy --no-install-recommends $RUNTIME_DEPS && \
     rm -fr /tmp/* /var/tmp/* /var/cache/apt/* /var/lib/apt/lists/* /var/log/apt/* /var/log/*.log
-
-RUN update-ca-certificates 2> /dev/null || true
 
 ENV UNBOUND_GIT_URL https://github.com/jedisct1/unbound.git
 ENV UNBOUND_GIT_REVISION 5d6bdf5a1c343205bba70999418de8335dc3b4f6
@@ -32,37 +31,11 @@ RUN apt-get update; apt-get install -qy --no-install-recommends $BUILD_DEPS && \
     rm -fr /opt/unbound/share/man && \
     rm -fr /tmp/* /var/tmp/* /var/cache/apt/* /var/lib/apt/lists/* /var/log/apt/* /var/log/*.log
 
-ENV RUSTFLAGS "-C link-arg=-s"
-
-RUN apt-get update && apt-get install -qy --no-install-recommends $BUILD_DEPS && \
-    curl -sSf https://sh.rustup.rs | bash -s -- -y --default-toolchain nightly && \
-    export PATH="$HOME/.cargo/bin:$PATH" && \
-    echo "Compiling encrypted-dns version 0.3.5" && \
-    cargo install encrypted-dns && \
-    mkdir -p /opt/encrypted-dns/sbin && \
-    mv ~/.cargo/bin/encrypted-dns /opt/encrypted-dns/sbin/ && \
-    strip --strip-all /opt/encrypted-dns/sbin/encrypted-dns && \
-    apt-get -qy purge $BUILD_DEPS && apt-get -qy autoremove && \
-    rm -fr ~/.cargo ~/.rustup && \
-    rm -fr /tmp/* /var/tmp/* /var/cache/apt/* /var/lib/apt/lists/* /var/log/apt/* /var/log/*.log
-
-RUN groupadd _encrypted-dns && \
-    mkdir -p /opt/encrypted-dns/empty && \
-    useradd -g _encrypted-dns -s /etc -d /opt/encrypted-dns/empty _encrypted-dns && \
-    mkdir -m 700 -p /opt/encrypted-dns/etc/keys && \
-    mkdir -m 700 -p /opt/encrypted-dns/etc/lists && \
-    chown _encrypted-dns:_encrypted-dns /opt/encrypted-dns/etc/keys && \
-    mkdir -m 700 -p /opt/dnscrypt-wrapper/etc/keys && \
-    mkdir -m 700 -p /opt/dnscrypt-wrapper/etc/lists && \
-    chown _encrypted-dns:_encrypted-dns /opt/dnscrypt-wrapper/etc/keys
-
 RUN mkdir -p \
     /etc/service/unbound \
     /etc/service/watchdog
 
 COPY encrypted-dns.toml.in /opt/encrypted-dns/etc/
-
-COPY entrypoint.sh /
 
 COPY unbound.sh /etc/service/unbound/run
 COPY unbound-check.sh /etc/service/unbound/check
